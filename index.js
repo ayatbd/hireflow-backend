@@ -198,22 +198,5 @@ app.put("/api/jobs/:id", authenticate, async (req, res) => {
   }
 });
 
-// DELETE /api/jobs/:id - Delete Job Listing
-app.delete("/api/jobs/:id", authenticate, async (req, res) => {
-  try {
-    const job = await Job.findById(req.params.id);
-    if (!job) return res.status(404).json({ message: "Job not found" });
-
-    if (job.recruiterId.toString() !== req.user.id) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-
-    await Job.findByIdAndDelete(req.params.id);
-    res.json({ message: "Job deleted successfully" });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
