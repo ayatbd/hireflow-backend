@@ -47,25 +47,62 @@ const userSchema = new mongoose.Schema(
 // Job Schema
 const jobSchema = new mongoose.Schema(
   {
+    title: { type: String, required: true, trim: true },
+    description: { type: String, required: true },
+
+    // Embedded company info for fast performance, plus a ref to the full profile
+    company: {
+      id: { type: mongoose.Schema.Types.ObjectId, ref: "Company" },
+      name: { type: String, required: true },
+      logo: { type: String },
+    },
+
     recruiterId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
-    title: { type: String, required: true },
-    companyName: { type: String, required: true },
-    description: { type: String, required: true },
+
+    category: { type: String, required: true }, // e.g. "Design", "Engineering"
+
     type: {
       type: String,
-      enum: ["Full-time", "Part-time", "Contract", "Remote"],
+      enum: ["Full-time", "Part-time", "Contract", "Internship", "Freelance"],
+      default: "Full-time",
+    },
+
+    workMode: {
+      type: String,
+      enum: ["On-site", "Remote", "Hybrid"],
       required: true,
     },
+
     location: { type: String, required: true },
-    salaryMin: Number,
-    salaryMax: Number,
-    category: String,
-    tags: [String],
+
+    salary: {
+      min: { type: Number },
+      max: { type: Number },
+      currency: { type: String, default: "USD" },
+      isNegotiable: { type: Boolean, default: false },
+    },
+
+    experienceLevel: {
+      type: String,
+      enum: ["Entry Level", "Mid Level", "Senior", "Lead", "Executive"],
+      required: true,
+    },
+
+    skills: [{ type: String }], // Array of strings for tags
+    requirements: [{ type: String }], // Bullet points
+    benefits: [{ type: String }], // Bullet points
+
     applicantsCount: { type: Number, default: 0 },
+
+    status: {
+      type: String,
+      enum: ["active", "expired", "draft"],
+      default: "active",
+    },
   },
   { timestamps: true },
 );
