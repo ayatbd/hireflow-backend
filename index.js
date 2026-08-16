@@ -107,6 +107,25 @@ const jobSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
+// Company Schema
+const companySchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, unique: true },
+    logo: { type: String }, // URL to Cloudinary/S3
+    website: { type: String },
+    location: { type: String, required: true },
+    industry: { type: String, required: true },
+    description: { type: String },
+    ownerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    admins: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }], // Multiple recruiters can manage one company
+  },
+  { timestamps: true },
+);
+
 // Application Schema
 const applicationSchema = new mongoose.Schema(
   {
@@ -129,6 +148,7 @@ const applicationSchema = new mongoose.Schema(
 
 const User = mongoose.model("User", userSchema);
 const Job = mongoose.model("Job", jobSchema);
+const Company = mongoose.model("Company", companySchema);
 const Application = mongoose.model("Application", applicationSchema);
 
 // --- 2. AUTHENTICATION MIDDLEWARE ---
@@ -225,6 +245,43 @@ app.get("/api/user-info", authenticate, async (req, res) => {
     if (!user) return res.status(404).json({ message: "User not found" });
 
     res.json(user);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// --- company routes ---
+
+app.post("/api/companies", authenticate, async (req, res) => {
+  try {
+    const { name, location, industry, website, description, logo } = req.body;
+
+    // 1. Check if company name already exists
+    const existingCompany = await User.findOne({ name });
+    if (existingCompany)
+      return res.status(400).json({ message: "Company already exists" });
+
+    // 2. Create the company
+    const newCompany = new Company({
+      name,
+      location,
+      industry,
+      website,
+      description,
+      logo,
+      ownerId: req.user.id, // From Auth Middleware
+      admins: [req.user.id],
+    });
+
+    const savedCompany = await newCompany.save();
+
+    // 3. Link this company to the Recruiter's User Profile
+    await User.findByIdAndUpdate(req.user.id, {
+      companyId: savedCompany._id,
+      role: "recruiter",
+    });
+
+    res.status(201).json(savedCompany);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
