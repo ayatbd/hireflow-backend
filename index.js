@@ -220,7 +220,7 @@ app.post("/api/login", async (req, res) => {
     const token = jwt.sign(
       { id: user._id, role: user.role },
       process.env.JWT_SECRET,
-      { expiresIn: "1d" },
+      { expiresIn: "7d" },
     );
 
     res.json({
@@ -250,14 +250,87 @@ app.get("/api/user-info", authenticate, async (req, res) => {
   }
 });
 
+// edit profile
+app.put("/api/users/:id", authenticate, async (req, res) => {
+  try {
+    // Security check: Users can only edit their own profile
+    if (req.user.id !== req.params.id) {
+      return res.status(403).json({ message: "Unauthorized" });
+    } else {
+      const updatedUser = await User.findByIdAndUpdate(
+        req.params.id,
+        req.body,
+        { new: true },
+      );
+      res.json(updatedUser);
+    }
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+//-------------------------------------------------
 // --- company routes ---
+//-------------------------------------------------
+
+// get all companies
+app.get("/api/companies", async (req, res) => {
+  try {
+    const { type, experience, minSalary, maxSalary } = req.query;
+
+    // Build the query object
+    const query = {};
+
+    // Filter by Job Type (expects comma separated string: "Full-time,Part-time")
+    if (type) {
+      query.jobType = { $in: type.split(",") };
+    }
+
+    // Filter by Experience Level
+    if (experience) {
+      query.experienceLevel = { $in: experience.split(",") };
+    }
+
+    // Filter by Salary Range
+    // Note: Frontend uses 'k' (thousands), assuming DB stores actual numbers
+    if (minSalary || maxSalary) {
+      query.salary = {};
+      if (minSalary) query.salary.$gte = Number(minSalary) * 1000;
+      if (maxSalary) query.salary.$lte = Number(maxSalary) * 1000;
+    }
+
+    const companies = await Company.find(query);
+    res.json(companies);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// get company by id
+app.get("/api/companies/:id", async (req, res) => {
+  try {
+    const company = await Company.findById(req.params.id);
+    res.json(company);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// get companies by user id
+app.get("/api/companies/user/:userId", async (req, res) => {
+  try {
+    const companies = await Company.find({ ownerId: req.params.userId });
+    res.json(companies);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
 
 app.post("/api/companies", authenticate, async (req, res) => {
   try {
     const { name, location, industry, website, description, logo } = req.body;
 
     // 1. Check if company name already exists
-    const existingCompany = await User.findOne({ name });
+    const existingCompany = await Company.findOne({ name });
     if (existingCompany)
       return res.status(400).json({ message: "Company already exists" });
 
@@ -287,6 +360,10 @@ app.post("/api/companies", authenticate, async (req, res) => {
   }
 });
 
+//-------------------------------------------------
+// --- 4. JOB ROUTES ---
+//-------------------------------------------------
+
 // POST /api/jobs - Create a New Job
 app.post("/api/jobs", authenticate, async (req, res) => {
   try {
@@ -302,6 +379,155 @@ app.post("/api/jobs", authenticate, async (req, res) => {
 
     const savedJob = await newJob.save();
     res.status(201).json(savedJob);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/jobs - Get All Job Listings
+app.get("/api/jobs", async (req, res) => {
+  try {
+    const {
+      keyword, // Added keyword
+      type,
+      experienceLevel, // Changed from experience to match DB
+      minSalary,
+      maxSalary,
+      page = 1,
+      limit = 10,
+    } = req.query;
+
+    let query = {};
+
+    // 1. Keyword Search (Title or Description)
+    if (keyword) {
+      query.$or = [
+        { title: { $regex: keyword, $options: "i" } },
+        { description: { $regex: keyword, $options: "i" } },
+      ];
+    }
+
+    // 2. Filter by Job Type
+    if (type) {
+      query.type = { $in: type.split(",") };
+    }
+
+    // 3. Filter by Experience Level (Matched to DB key)
+    if (experienceLevel) {
+      query.experienceLevel = { $in: experienceLevel.split(",") };
+    }
+
+    // 4. Filter by Salary Range
+    if (minSalary || maxSalary) {
+      if (minSalary) query["salary.min"] = { $gte: Number(minSalary) };
+      if (maxSalary) query["salary.max"] = { $lte: Number(maxSalary) };
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const totalJobs = await Job.countDocuments(query);
+    const jobs = await Job.find(query)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    res.json({
+      jobs,
+      pagination: {
+        totalJobs,
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(totalJobs / limit),
+        hasNextPage: skip + jobs.length < totalJobs,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// job search by title and location together
+app.get("/api/jobs/search", async (req, res) => {
+  try {
+    const { keyword, location, type } = req.query;
+
+    const query = {};
+
+    // Job title / keyword
+    if (keyword?.trim()) {
+      query.$or = [
+        {
+          title: {
+            $regex: keyword.trim(),
+            $options: "i",
+          },
+        },
+        {
+          description: {
+            $regex: keyword.trim(),
+            $options: "i",
+          },
+        },
+      ];
+    }
+
+    // Location
+    if (location?.trim()) {
+      query.location = {
+        $regex: location.trim(),
+        $options: "i",
+      };
+    }
+
+    // Job type
+    if (type?.trim()) {
+      query.type = {
+        $regex: type.trim(),
+        $options: "i",
+      };
+    }
+
+    const jobs = await Job.find(query).sort({ createdAt: -1 }).limit(50);
+
+    res.status(200).json({
+      success: true,
+      count: jobs.length,
+      jobs,
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to search jobs",
+    });
+  }
+});
+
+// GET /api/jobs/:id - Get Single Job Listing
+app.get("/api/jobs/:id", async (req, res) => {
+  try {
+    const job = await Job.findById(req.params.id);
+    if (!job) return res.status(404).json({ message: "Job not found" });
+    res.json(job);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// toggle featured status of a job
+app.patch("/api/jobs/:id/feature", authenticate, async (req, res) => {
+  try {
+    const job = await Job.findById(req.params.id);
+    if (!job) return res.status(404).json({ message: "Job not found" });
+
+    // Security check: Is this the recruiter's own job?
+    if (job.recruiterId.toString() !== req.user.id) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    job.featured = !job.featured;
+    const updatedJob = await job.save();
+    res.json(updatedJob);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -327,3 +553,10 @@ app.put("/api/jobs/:id", authenticate, async (req, res) => {
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+
+app.get("/", (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "HireFlow backend is running!",
+  });
+});
