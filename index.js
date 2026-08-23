@@ -135,16 +135,24 @@ const applicationSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    recruiterId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    resume: { type: String, required: true }, // URL to resume
+    coverLetter: { type: String },
     status: {
       type: String,
       enum: ["pending", "reviewing", "interviewing", "offered", "rejected"],
       default: "pending",
     },
-    resumeSnapshot: String, // Link to resume at time of application
-    coverLetter: String,
   },
   { timestamps: true },
 );
+
+// Prevent applying to the same job twice
+applicationSchema.index({ jobId: 1, seekerId: 1 }, { unique: true });
 
 const User = mongoose.model("User", userSchema);
 const Job = mongoose.model("Job", jobSchema);
@@ -546,6 +554,44 @@ app.put("/api/jobs/:id", authenticate, async (req, res) => {
 
     job = await Job.findByIdAndUpdate(req.params.id, req.body, { new: true });
     res.json(job);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+//----------------------------------
+// --- application routes ---
+//----------------------------------
+app.post("/api/applications", authenticate, async (req, res) => {
+  try {
+    const { jobId, recruiterId, resume, coverLetter } = req.body;
+    const seekerId = req.user.id;
+
+    // 1. Check if already applied
+    const existingApplication = await Application.findOne({ jobId, seekerId });
+    if (existingApplication) {
+      return res
+        .status(400)
+        .json({ message: "You have already applied for this job." });
+    }
+
+    // 2. Create application
+    const application = new Application({
+      jobId,
+      seekerId,
+      recruiterId,
+      resume,
+      coverLetter,
+    });
+
+    await application.save();
+
+    // 3. Increment applicant count in Job model
+    await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: 1 } });
+
+    res
+      .status(201)
+      .json({ message: "Application submitted successfully!", application });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
