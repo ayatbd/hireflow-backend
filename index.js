@@ -276,6 +276,41 @@ app.put("/api/users/:id", authenticate, async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 });
+
+// PATCH /api/user-info - Update Seeker Professional Details
+app.patch("/api/user-info", authenticate, async (req, res) => {
+  try {
+    const { resume, skills, bio, location } = req.body;
+    const userId = req.user.id; // From JWT middleware
+
+    // 1. Find user and update specific fields
+    // We use $set to ensure we only change the provided fields
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      {
+        $set: {
+          resume, // The Cloudinary URL
+          skills, // The Array of strings
+          bio,
+          location,
+          // We can also ensure the role is set correctly here
+          role: "seeker",
+        },
+      },
+      { new: true, runValidators: true }, // Returns the updated document
+    ).select("-password"); // Security: Hide password
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // 2. Return the updated user object
+    res.json(updatedUser);
+  } catch (error) {
+    console.error("Update Profile Error:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
 //-------------------------------------------------
 // --- company routes ---
 //-------------------------------------------------
