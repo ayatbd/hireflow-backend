@@ -632,6 +632,28 @@ app.post("/api/applications", authenticate, async (req, res) => {
   }
 });
 
+// Get applications of current user
+app.get("/api/seeker/applications", authenticate, async (req, res) => {
+  try {
+    const applications = await Application.find({ seekerId: req.user.id });
+    res.json(applications);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// get all applicants, all jobs and all companies
+app.get("/api/admin", async (req, res) => {
+  try {
+    const jobs = await Job.find();
+    const companies = await Company.find();
+    const applicants = await Application.find();
+    res.json({ jobs, companies, applicants });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
 
